@@ -1,0 +1,40 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "18"
+
+      # Frontend tests
+      - name: Frontend - Install dependencies
+        run: cd frontend && npm install
+      - name: Frontend - Run tests
+        run: cd frontend && npm test
+
+      # Backend tests
+      - name: Backend - Install dependencies
+        run: cd backend && npm install
+      - name: Backend - Run tests
+        run: cd backend && npm test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build Docker images
+        run: docker-compose build
+
+      # Add deployment steps here for your cloud provider
