@@ -19,7 +19,7 @@ const corsOptions = {
 const app = express();
 
 // Connect to MongoDB
-connectDB();
+// connectDB();
 
 // Middleware
 app.use(cors(corsOptions));
