@@ -1,0 +1,204 @@
++1 732 666 8288
+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
+
+//working
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebRTC OpenAI Chat</title>
+    <style>
+      .controls {
+        margin: 20px;
+      }
+      .status {
+        color: #666;
+        margin: 10px 0;
+      }
+      button {
+        margin: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <input type="password" id="apiKey" placeholder="Enter OpenAI API Key" />
+      <button id="startButton">Start Recording</button>
+      <button id="stopButton" disabled>Stop</button>
+    </div>
+    <div id="status" class="status"></div>
+    <audio id="audioPlayer" controls style="display: none"></audio>
+
+    <script>
+      const startButton = document.getElementById("startButton");
+      const stopButton = document.getElementById("stopButton");
+      const status = document.getElementById("status");
+      const audioPlayer = document.getElementById("audioPlayer");
+      const apiKeyInput = document.getElementById("apiKey");
+
+      let mediaRecorder;
+      let audioChunks = [];
+      let audioContext;
+      let mediaStream;
+
+      async function initAudio() {
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+          status.textContent = "Please enter OpenAI API key";
+          return;
+        }
+
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          audioContext = new AudioContext();
+          const mediaStreamSource =
+            audioContext.createMediaStreamSource(mediaStream);
+
+          // Create processor node for real-time audio processing
+          const processor = audioContext.createScriptProcessor(4096, 1, 1);
+          mediaStreamSource.connect(processor);
+          processor.connect(audioContext.destination);
+
+          // Start recording
+          mediaRecorder = new MediaRecorder(mediaStream);
+          mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+            await processAudioWithOpenAI(audioBlob, apiKey);
+            audioChunks = [];
+          };
+
+          // Handle real-time audio processing
+          processor.onaudioprocess = async (e) => {
+            const inputData = e.inputBuffer.getChannelData(0);
+            // Process audio in chunks (every 5 seconds)
+            if (audioChunks.length > 0 && audioChunks.length % 50 === 0) {
+              const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+              await processAudioWithOpenAI(audioBlob, apiKey);
+              audioChunks = [];
+            }
+          };
+
+          mediaRecorder.start(100); // Collect data in 100ms chunks
+          startButton.disabled = true;
+          stopButton.disabled = false;
+          status.textContent = "Recording and processing audio...";
+        } catch (err) {
+          status.textContent = `Error: ${err.message}`;
+          console.error(err);
+        }
+      }
+
+      async function processAudioWithOpenAI(audioBlob, apiKey) {
+        try {
+          // Convert audio to format accepted by OpenAI
+          const formData = new FormData();
+          formData.append("file", audioBlob, "audio.wav");
+          formData.append("model", "whisper-1");
+
+          // First, transcribe the audio
+          const transcriptionResponse = await fetch(
+            "https://api.openai.com/v1/audio/transcriptions",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: formData,
+            }
+          );
+
+          if (!transcriptionResponse.ok) {
+            throw new Error("Transcription failed");
+          }
+
+          const transcriptionData = await transcriptionResponse.json();
+
+          // Then, get AI response using Chat API
+          const chatResponse = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "gpt-3.5-turbo",
+                messages: [
+                  {
+                    role: "user",
+                    content: transcriptionData.text,
+                  },
+                ],
+              }),
+            }
+          );
+
+          if (!chatResponse.ok) {
+            throw new Error("Chat completion failed");
+          }
+
+          const chatData = await chatResponse.json();
+
+          // Finally, convert AI response to speech
+          const speechResponse = await fetch(
+            "https://api.openai.com/v1/audio/speech",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "tts-1",
+                input: chatData.choices[0].message.content,
+                voice: "alloy",
+              }),
+            }
+          );
+
+          if (!speechResponse.ok) {
+            throw new Error("Speech synthesis failed");
+          }
+
+          const audioResponse = await speechResponse.blob();
+          audioPlayer.src = URL.createObjectURL(audioResponse);
+          audioPlayer.style.display = "block";
+          await audioPlayer.play();
+
+          status.textContent = "Response ready!";
+        } catch (err) {
+          status.textContent = `Error: ${err.message}`;
+          console.error(err);
+        }
+      }
+
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+          mediaStream.getTracks().forEach((track) => track.stop());
+          if (audioContext) {
+            audioContext.close();
+          }
+        }
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        status.textContent = "Recording stopped";
+      }
+
+      startButton.onclick = initAudio;
+      stopButton.onclick = stopRecording;
+
+      // Cleanup on page unload
+      window.addEventListener("beforeunload", () => {
+        stopRecording();
+      });
+    </script>
+  </body>
+</html>

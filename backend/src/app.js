@@ -9,13 +9,20 @@ const errorHandler = require("./middleware/errorHandler");
 const logger = require("./middleware/logger");
 const chatRoutes = require("./routes/chat");
 
+const corsOptions = {
+  origin: "https://helpdesk-chatbot.vercel.app",
+  methods: ["GET", "POST", "PUT", "DELETE"], // Specify allowed methods
+  allowedHeaders: ["Content-Type", "Authorization"], // Specify allowed headers
+  credentials: true, // Allow cookies and credentials
+};
+
 const app = express();
 
 // Connect to MongoDB
 connectDB();
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(helmet());
 app.use(compression());
 app.use(express.json());
